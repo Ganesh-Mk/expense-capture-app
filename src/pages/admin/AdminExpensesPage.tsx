@@ -53,15 +53,37 @@ export default function AdminExpensesPage() {
     setLoading(true)
     let query = supabase
       .from('expenses')
-      .select('*, expense_categories(*), profiles(*)')
+      .select('*')
       .order('created_at', { ascending: false })
       .limit(200)
 
     if (statusFilter) query = query.eq('status', statusFilter)
     if (categoryFilter) query = query.eq('category_id', categoryFilter)
 
-    const { data } = await query
-    setExpenses((data as FullExpense[]) ?? [])
+    const [{ data: expenseData }, { data: profileData }, { data: categoryData }] = await Promise.all([
+      query,
+      supabase.from('profiles').select('*'),
+      supabase.from('expense_categories').select('*'),
+    ])
+
+    const profilesById = new Map((profileData ?? []).map(profile => [profile.id, profile]))
+    const categoriesById = new Map((categoryData ?? []).map(category => [category.id, category]))
+
+    setExpenses(
+      ((expenseData ?? []) as Expense[])
+        .map(expense => {
+          const profile = profilesById.get(expense.user_id)
+          const category = categoriesById.get(expense.category_id)
+
+          if (!profile || !category) return null
+          return {
+            ...expense,
+            profiles: profile,
+            expense_categories: category,
+          }
+        })
+        .filter((expense): expense is FullExpense => Boolean(expense))
+    )
     setLoading(false)
   }, [statusFilter, categoryFilter])
 

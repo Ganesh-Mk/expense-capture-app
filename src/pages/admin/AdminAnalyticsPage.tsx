@@ -23,13 +23,34 @@ export default function AdminAnalyticsPage() {
   const [range, setRange] = useState('6')
 
   useEffect(() => {
-    supabase
-      .from('expenses')
-      .select('*, expense_categories(*), profiles(*)')
-      .neq('status', 'rejected')
-      .order('expense_date', { ascending: true })
-      .then(({ data }) => {
-        setExpenses((data as FullExpense[]) ?? [])
+    Promise.all([
+      supabase
+        .from('expenses')
+        .select('*')
+        .neq('status', 'rejected')
+        .order('expense_date', { ascending: true }),
+      supabase.from('profiles').select('*'),
+      supabase.from('expense_categories').select('*'),
+    ])
+      .then(([expensesResult, profilesResult, categoriesResult]) => {
+        const profilesById = new Map((profilesResult.data ?? []).map(profile => [profile.id, profile]))
+        const categoriesById = new Map((categoriesResult.data ?? []).map(category => [category.id, category]))
+
+        setExpenses(
+          ((expensesResult.data ?? []) as Expense[])
+            .map(expense => {
+              const profile = profilesById.get(expense.user_id)
+              const category = categoriesById.get(expense.category_id)
+
+              if (!profile || !category) return null
+              return {
+                ...expense,
+                profiles: profile,
+                expense_categories: category,
+              }
+            })
+            .filter((expense): expense is FullExpense => Boolean(expense))
+        )
         setLoading(false)
       })
   }, [])

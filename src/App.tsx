@@ -1,17 +1,18 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { AuthProvider } from '@/context/AuthContext'
-import { ProtectedRoute } from '@/components/ProtectedRoute'
-import AppLayout from '@/components/AppLayout'
-import LoginPage from '@/pages/auth/LoginPage'
-import RegisterPage from '@/pages/auth/RegisterPage'
-import DashboardPage from '@/pages/dashboard/DashboardPage'
-import NewExpensePage from '@/pages/expenses/NewExpensePage'
-import MyExpensesPage from '@/pages/expenses/MyExpensesPage'
-import ChatPage from '@/pages/chat/ChatPage'
-import AdminExpensesPage from '@/pages/admin/AdminExpensesPage'
-import AdminEmployeesPage from '@/pages/admin/AdminEmployeesPage'
-import AdminAnalyticsPage from '@/pages/admin/AdminAnalyticsPage'
-import { Toaster } from '@/components/ui/sonner'
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider } from "@/context/AuthContext";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
+import AppLayout from "@/components/AppLayout";
+import LoginPage from "@/pages/auth/LoginPage";
+import RegisterPage from "@/pages/auth/RegisterPage";
+import DashboardPage from "@/pages/dashboard/DashboardPage";
+import NewExpensePage from "@/pages/expenses/NewExpensePage";
+import MyExpensesPage from "@/pages/expenses/MyExpensesPage";
+import ChatPage from "@/pages/chat/ChatPage";
+import AdminExpensesPage from "@/pages/admin/AdminExpensesPage";
+import AdminEmployeesPage from "@/pages/admin/AdminEmployeesPage";
+import AdminAnalyticsPage from "@/pages/admin/AdminAnalyticsPage";
+import AdminRulesPage from "@/pages/admin/AdminRulesPage";
+import { Toaster } from "@/components/ui/sonner";
 
 export default function App() {
   return (
@@ -33,8 +34,15 @@ export default function App() {
               {/* Admin only */}
               <Route element={<ProtectedRoute requireAdmin />}>
                 <Route path="/admin/expenses" element={<AdminExpensesPage />} />
-                <Route path="/admin/employees" element={<AdminEmployeesPage />} />
-                <Route path="/admin/analytics" element={<AdminAnalyticsPage />} />
+                <Route
+                  path="/admin/employees"
+                  element={<AdminEmployeesPage />}
+                />
+                <Route
+                  path="/admin/analytics"
+                  element={<AdminAnalyticsPage />}
+                />
+                <Route path="/admin/rules" element={<AdminRulesPage />} />
               </Route>
             </Route>
           </Route>
@@ -45,5 +53,5 @@ export default function App() {
       </BrowserRouter>
       <Toaster position="bottom-right" />
     </AuthProvider>
-  )
+  );
 }
