@@ -1,16 +1,16 @@
-# ExpenseFlow - Complete Feature Walkthrough & Interview Guide
+# ExpenseFlow - Complete Feature Walkthrough
 
 ## Project Overview
 
 **ExpenseFlow** is a full-stack web application for capturing, validating, and managing employee expenses. Built with **React + TypeScript** frontend, **Supabase** backend, and **PostgreSQL** database.
 
 **Problem Statement Solved:**
-✅ Expense capture web app with React  
-✅ Frontend + backend validation with grade-based rules  
-✅ SQL database (PostgreSQL via Supabase)  
-✅ Receipt storage (Supabase Storage)  
-✅ Chat interface for expense filing & support  
-✅ Employee expense retrieval + Admin dashboard & analytics  
+✅ Expense capture web app with React
+✅ Frontend + backend validation with grade-based rules
+✅ SQL database (PostgreSQL via Supabase)
+✅ Receipt storage (Supabase Storage)
+✅ Chat interface for expense filing & support
+✅ Employee expense retrieval + Admin dashboard & analytics
 ✅ Native authentication + Role-based access control
 
 ---
@@ -19,8 +19,8 @@
 
 ### Tech Stack
 
-| Layer              | Technology                                             |
-| ------------------ | ------------------------------------------------------ |
+| Layer                    | Technology                                             |
+| ------------------------ | ------------------------------------------------------ |
 | **Frontend**       | React 19, TypeScript, Vite, Tailwind CSS, React Router |
 | **UI Components**  | Shadcn/ui (Radix UI primitives)                        |
 | **Backend**        | Supabase (PostgreSQL + Edge Functions + Storage)       |
@@ -93,8 +93,8 @@ async function signUp(
 
 ### Role-Based Access
 
-| Route                     | Employee | Admin |
-| ------------------------- | -------- | ----- |
+| Route                       | Employee | Admin |
+| --------------------------- | -------- | ----- |
 | `/dashboard`              | ✅       | ✅    |
 | `/expenses/new`           | ✅       | ✅    |
 | `/expenses` (My Expenses) | ✅       | ✅    |
@@ -200,8 +200,8 @@ Index: user_id
 
 **All tables have RLS enabled.** Policies control who sees/modifies what:
 
-| Table             | SELECT                         | INSERT           | UPDATE                   | DELETE                   |
-| ----------------- | ------------------------------ | ---------------- | ------------------------ | ------------------------ |
+| Table                   | SELECT                         | INSERT           | UPDATE                   | DELETE                   |
+| ----------------------- | ------------------------------ | ---------------- | ------------------------ | ------------------------ |
 | **profiles**      | User sees own + admin sees all | User creates own | User updates own + admin | User deletes own         |
 | **expenses**      | User sees own + admin sees all | User inserts own | User updates own + admin | User deletes own + admin |
 | **categories**    | All authenticated users        | Admin only       | Admin only               | Admin only               |
@@ -423,8 +423,8 @@ User: "₹300"
 
 ### Message Types
 
-| message_type     | Description               |
-| ---------------- | ------------------------- |
+| message_type       | Description               |
+| ------------------ | ------------------------- |
 | `text`           | Regular chat message      |
 | `expense_parsed` | Bot auto-created expense  |
 | `receipt_upload` | Receipt attached (future) |
@@ -528,25 +528,26 @@ async function rejectExpense(expenseId, reason) {
 **Visualizations:**
 
 1. **Key Metrics Cards:**
+
    - Total expenses filed
    - Total amount spent (₹)
    - Average expense amount
    - Pending approval count
-
 2. **Spend by Category (Bar Chart):**
+
    - X-axis: Category names
    - Y-axis: Total amount (₹)
    - Aggregates all expenses grouped by category
-
 3. **Spend Trend (Line Chart):**
+
    - X-axis: Months (last 12)
    - Y-axis: Total amount per month (₹)
    - Shows spending patterns over time
-
 4. **Expense Status Distribution:**
-   - pending, approved, rejected, flagged counts
 
+   - pending, approved, rejected, flagged counts
 5. **Top Employees by Spend:**
+
    - Table: Employee name, total amount, expense count
 
 **Query Example:**
@@ -735,6 +736,7 @@ Employee sees updated status in My Expenses next load
      SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'
    ))
    ```
+
    This means: User can select own expenses OR if they're admin, select any expense.
 
 **Benefit:** If a malicious user tries to query expenses via API, the database automatically filters based on their role.
@@ -746,8 +748,8 @@ Employee sees updated status in My Expenses next load
 **A:** Simple keyword-matching + regex:
 
 1. **Amount extraction:** Regex `/(?:rs\.?|₹|inr)?\s*(\d+(?:[,\d]*)?(?:\.\d{1,2})?)/i`
-   - Matches: "₹450", "Rs. 500", "1200 rupees"
 
+   - Matches: "₹450", "Rs. 500", "1200 rupees"
 2. **Category extraction:** Keyword dictionary
 
    ```typescript
@@ -760,12 +762,10 @@ Employee sees updated status in My Expenses next load
 
    - For each category, loop through keywords
    - If text contains keyword (case-insensitive), match that category
-
 3. **Description & date:** Take message text (first 100 chars), use today's date
-
 4. **Validation:** Both amount AND category must exist to auto-file
-   - If missing → Bot sends helpful message asking for missing info
 
+   - If missing → Bot sends helpful message asking for missing info
 5. **Create expense:** If complete, insert into DB with `is_from_chat=true`
 
 **Limitations:** This is intentionally simple. For production, you'd use ML (spaCy, GPT-based) for better extraction.
@@ -777,23 +777,23 @@ Employee sees updated status in My Expenses next load
 **A:**
 
 1. **File validation (frontend):**
+
    - Max size: 5 MB
    - Allowed types: Images (JPG, PNG) + PDF
-
 2. **Upload path:** `receipts/{user_id}/{timestamp}.ext`
+
    - Scoped to user directory
    - Timestamped to prevent collisions
-
 3. **Storage bucket:**
+
    - Private by default
    - Only authenticated users can upload
    - URL is public once uploaded (for viewing in app)
-
 4. **Database reference:**
+
    - Store `receipt_url` (public URL) in expense record
    - Store `receipt_filename` (original name) for reference
    - Link to expense via `id`
-
 5. **RLS:** Only user/admin can see receipt URL via expense query
 
 ---
@@ -802,8 +802,8 @@ Employee sees updated status in My Expenses next load
 
 **A:**
 
-| Aspect               | Frontend                        | Backend                            |
-| -------------------- | ------------------------------- | ---------------------------------- |
+| Aspect                     | Frontend                        | Backend                            |
+| -------------------------- | ------------------------------- | ---------------------------------- |
 | **Where**            | Browser (React)                 | Server (Edge Function)             |
 | **Purpose**          | UX feedback                     | Security enforcing                 |
 | **What checks**      | Required fields, format, length | Business logic (rules, limits)     |
@@ -879,12 +879,10 @@ async function loadMore() {
    USING (auth.uid() = user_id OR IS_ADMIN)
    WITH CHECK (auth.uid() = user_id OR IS_ADMIN)
    ```
-
 2. **Frontend:** Only admin sees approve/reject buttons in UI
-
 3. **Backend:** Validate auth.uid() before any update query
-
 4. **Status validation:** Only allow specific transitions:
+
    - pending → approved/rejected/flagged
    - flagged → approved/rejected
    - Cannot change status if already rejected
@@ -912,21 +910,22 @@ async function loadMore() {
 **A:**
 
 1. **Database constraints:**
+
    - Amount > 0
    - category_id must exist (FK constraint)
    - user_id must exist (FK constraint)
-
 2. **Atomic transactions:** Each INSERT is a single transaction
+
    - Either succeeds fully or rolls back
    - No partial updates
-
 3. **Indexes:** On user_id, expense_date, status for fast queries
+
    - Prevents table scans during high load
-
 4. **Connection pooling:** Supabase handles connection management
-   - Reuses connections, reduces overhead
 
+   - Reuses connections, reduces overhead
 5. **Rate limiting:** (Not implemented yet, but would add)
+
    - Limit expenses per user per minute
    - Prevent spam submissions
 
@@ -965,28 +964,28 @@ async function loadMore() {
 ### Narrative Flow
 
 1. **Start with problem:** "Built a full-stack expense app to handle grade-based spending limits and multi-user expense management."
-
 2. **Discuss architecture:**
+
    - React frontend with TypeScript
    - Supabase backend (PostgreSQL + Edge Functions)
    - Row-Level Security for data isolation
-
 3. **Dive into key features:**
+
    - Grade-based validation rules
    - Real-time chat with NLP parsing
    - Admin approval workflow
    - Analytics dashboard
-
 4. **Explain security:**
+
    - RLS policies prevent unauthorized access
    - Backend validation enforces business logic
    - Frontend validation improves UX
-
 5. **Discuss trade-offs:**
+
    - Simple NLP vs. ML-based parsing
    - Denormalization vs. normalization (spent today calculated on-the-fly vs. cached)
-
 6. **What you learned:**
+
    - Row-Level Security design
    - Real-time subscriptions
    - Grade-based access patterns
@@ -1004,8 +1003,8 @@ async function loadMore() {
 
 ## 14. QUICK REFERENCE: Major Components
 
-| File                                                                                                                   | Purpose           | Key Logic                                         |
-| ---------------------------------------------------------------------------------------------------------------------- | ----------------- | ------------------------------------------------- |
+| File                                                                                                                  | Purpose           | Key Logic                                         |
+| --------------------------------------------------------------------------------------------------------------------- | ----------------- | ------------------------------------------------- |
 | [src/context/AuthContext.tsx](src/context/AuthContext.tsx)                                                             | Global auth state | Sign in/up, profile fetch, session management     |
 | [src/components/ProtectedRoute.tsx](src/components/ProtectedRoute.tsx)                                                 | Route guards      | Check auth + role-based access                    |
 | [src/pages/expenses/NewExpensePage.tsx](src/pages/expenses/NewExpensePage.tsx)                                         | Expense form      | Frontend validation + real-time server validation |
