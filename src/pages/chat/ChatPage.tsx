@@ -50,9 +50,26 @@ function parseExpenseFromText(text: string, categories: ExpenseCategory[]): {
   }
 }
 
-function buildBotReply(parsed: ReturnType<typeof parseExpenseFromText>, created: boolean): string {
+type ValidationResult = {
+  status: 'pending' | 'flagged' | 'rejected'
+  violations: string[]
+}
+
+function buildBotReply(
+  parsed: ReturnType<typeof parseExpenseFromText>,
+  created: boolean,
+  validation: ValidationResult | null,
+): string {
   if (created && parsed.amount && parsed.category) {
-    return `✓ Expense recorded!\n\n**₹${parsed.amount.toLocaleString('en-IN')}** for **${parsed.category.name}** on ${format(new Date(), 'dd MMM yyyy')}.\n\nThe expense is now pending approval. You can view it in My Expenses.`
+    const statusText =
+      validation?.status === 'flagged'
+        ? 'flagged for manager review'
+        : 'pending approval'
+
+    return `✓ Expense recorded!\n\n**₹${parsed.amount.toLocaleString('en-IN')}** for **${parsed.category.name}** on ${format(new Date(), 'dd MMM yyyy')}.\n\nThe expense is now ${statusText}. You can view it in My Expenses.`
+  }
+  if (validation?.status === 'rejected') {
+    return `This expense exceeds your allowed limits and cannot be submitted.\n\n${validation.violations.join('\n')}`
   }
   if (!parsed.amount && !parsed.category) {
     return `I couldn't detect an expense in your message. Try something like:\n\n• "Paid ₹450 for lunch at Swiggy"\n• "₹1200 hotel stay in Mumbai"\n• "Cab ride ₹280 to office"`
@@ -140,6 +157,39 @@ export default function ChatPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading])
 
+  async function validateExpense(
+    amount: number,
+    categoryId: string,
+    date: string,
+  ): Promise<ValidationResult | null> {
+    if (!user || !profile) return null
+
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/validate-expense`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({
+            user_id: user.id,
+            category_id: categoryId,
+            amount,
+            expense_date: date,
+            grade: profile.grade,
+          }),
+        },
+      )
+
+      if (!res.ok) return null
+      return res.json()
+    } catch {
+      return null
+    }
+  }
+
   async function handleSend() {
     if ((!input.trim() && !receiptFile) || !user || !profile) return
     setSending(true)
@@ -162,27 +212,32 @@ export default function ChatPage() {
     const parsed = parseExpenseFromText(userContent, categories)
     let created = false
     let expenseId: string | null = null
+    let validation: ValidationResult | null = null
 
     if (parsed.amount && parsed.category) {
-      // Attempt to create expense
-      const { data: expense } = await supabase.from('expenses').insert({
-        user_id: user.id,
-        category_id: parsed.category.id,
-        amount: parsed.amount,
-        description: parsed.description,
-        expense_date: parsed.date,
-        is_from_chat: true,
-        status: 'pending',
-      }).select().maybeSingle()
+      validation = await validateExpense(parsed.amount, parsed.category.id, parsed.date)
 
-      if (expense) {
-        created = true
-        expenseId = expense.id
+      // Attempt to create expense
+      if (validation && validation.status !== 'rejected') {
+        const { data: expense } = await supabase.from('expenses').insert({
+          user_id: user.id,
+          category_id: parsed.category.id,
+          amount: parsed.amount,
+          description: parsed.description,
+          expense_date: parsed.date,
+          is_from_chat: true,
+          status: validation.status,
+        }).select().maybeSingle()
+
+        if (expense) {
+          created = true
+          expenseId = expense.id
+        }
       }
     }
 
     // Bot reply
-    const botContent = buildBotReply(parsed, created)
+    const botContent = buildBotReply(parsed, created, validation)
     const { data: botMsg } = await supabase.from('chat_messages').insert({
       user_id: user.id,
       role: 'assistant',

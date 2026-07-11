@@ -86,6 +86,7 @@ export default function NewExpensePage() {
   }, []);
 
   useEffect(() => {
+    setValidation(null);
     if (!watchAmount || !watchCategory || !watchDate || !user || !profile)
       return;
     const amount = parseFloat(watchAmount);
@@ -104,8 +105,8 @@ export default function NewExpensePage() {
     amount: number,
     categoryId: string,
     date: string,
-  ) {
-    if (!user || !profile) return;
+  ): Promise<ValidationResult | null> {
+    if (!user || !profile) return null;
     setValidating(true);
     try {
       const res = await fetch(
@@ -126,7 +127,14 @@ export default function NewExpensePage() {
         },
       );
       const data = await res.json();
-      if (res.ok) setValidation(data);
+      if (!res.ok) {
+        throw new Error(data.error ?? "Unable to validate expense policy");
+      }
+      setValidation(data);
+      return data;
+    } catch (err) {
+      setApiError((err as Error).message);
+      return null;
     } finally {
       setValidating(false);
     }
@@ -164,7 +172,18 @@ export default function NewExpensePage() {
   async function onSubmit(data: FormData) {
     if (!validateForm(data)) return;
     if (!user) return;
-    if (validation?.status === "rejected") {
+    const currentValidation = await runValidation(
+      parseFloat(data.amount),
+      data.category_id,
+      data.expense_date,
+    );
+
+    if (!currentValidation) {
+      setApiError("Expense policy could not be checked. Please try again.");
+      return;
+    }
+
+    if (currentValidation.status === "rejected") {
       setApiError(
         "This expense exceeds your allowed limits and cannot be submitted.",
       );
@@ -200,7 +219,7 @@ export default function NewExpensePage() {
         expense_date: data.expense_date,
         merchant_name: data.merchant_name || null,
         location: data.location || null,
-        status: validation?.status ?? "pending",
+        status: currentValidation.status,
         receipt_url: receiptUrl,
         receipt_filename: receiptFilename,
         is_from_chat: false,
@@ -528,7 +547,9 @@ export default function NewExpensePage() {
           </Button>
           <Button
             type="submit"
-            disabled={submitting || validation?.status === "rejected"}
+            disabled={
+              submitting || validating || validation?.status === "rejected"
+            }
             className="flex-1"
           >
             {submitting && <Loader2 className="size-4 animate-spin" />}
