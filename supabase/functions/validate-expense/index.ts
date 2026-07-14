@@ -5,6 +5,7 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+  "Access-Control-Max-Age": "86400",
 }
 
 interface ValidationRequest {
@@ -24,28 +25,82 @@ interface ValidationResult {
     per_expense_limit: number
     daily_spent: number
     daily_remaining: number
-  }
+  } | null
+}
+
+const buildResponse = (data: unknown, status = 200) => {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+    },
+  })
 }
 
 Deno.serve(async (req: Request) => {
+  // Ensure OPTIONS requests always return HTTP 200 with CORS headers immediately
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers: corsHeaders })
+    return new Response("ok", { status: 200, headers: corsHeaders })
   }
 
+  console.log(`[validate-expense] Received ${req.method} request`)
+
   try {
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
-    )
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
 
-    const body: ValidationRequest = await req.json()
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error("[validate-expense] Error: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables.")
+      return buildResponse({ error: "Server configuration error: missing credentials" }, 500)
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+    // Authorization verification
+    const authHeader = req.headers.get("Authorization")
+    if (!authHeader) {
+      console.warn("[validate-expense] Warning: Missing Authorization header")
+      return buildResponse({ error: "Unauthorized: Missing Authorization header" }, 401)
+    }
+
+    const token = authHeader.replace("Bearer ", "")
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    if (authError || !user) {
+      console.error("[validate-expense] Auth verification failed:", authError?.message || "Invalid token")
+      return buildResponse({ error: "Unauthorized: Invalid session or token" }, 401)
+    }
+
+    // Safely parse body
+    let body: ValidationRequest
+    try {
+      body = await req.json()
+    } catch (parseErr) {
+      console.error("[validate-expense] JSON parse error:", (parseErr as Error).message)
+      return buildResponse({ error: "Invalid JSON request body" }, 400)
+    }
+
     const { user_id, category_id, amount, expense_date, grade } = body
+    console.log(`[validate-expense] Validating for user: ${user_id}, category: ${category_id}, amount: ${amount}, date: ${expense_date}, grade: ${grade}`)
 
-    if (!user_id || !category_id || !amount || !expense_date || !grade) {
-      return new Response(
-        JSON.stringify({ error: "Missing required fields" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      )
+    // Missing field check
+    if (!user_id || !category_id || amount === undefined || amount === null || !expense_date || grade === undefined || grade === null) {
+      console.warn("[validate-expense] Warning: Missing required fields in body:", body)
+      return buildResponse({ error: "Missing required fields: user_id, category_id, amount, expense_date, and grade are required." }, 400)
+    }
+
+    // Role & ownership check: standard employees can only validate their own expenses
+    if (user.id !== user_id) {
+      const { data: profile, error: profileErr } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single()
+
+      if (profileErr || profile?.role !== "admin") {
+        console.warn(`[validate-expense] Security Warning: User ${user.id} attempted to validate for user ${user_id}`)
+        return buildResponse({ error: "Unauthorized: Cannot validate expense for another user" }, 403)
+      }
     }
 
     // Fetch the rule for this grade + category
@@ -56,28 +111,32 @@ Deno.serve(async (req: Request) => {
       .eq("category_id", category_id)
       .maybeSingle()
 
-    if (ruleError) throw ruleError
+    if (ruleError) {
+      console.error("[validate-expense] Database error fetching rule:", ruleError.message)
+      throw ruleError
+    }
 
     const violations: string[] = []
     let status: "pending" | "flagged" | "rejected" = "pending"
 
     if (!rule) {
-      // No rule = no cap, allow it
-      return new Response(
-        JSON.stringify({
-          valid: true,
-          status: "pending",
-          violations: [],
-          rule: null,
-        } satisfies ValidationResult),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      )
+      console.log(`[validate-expense] No rule defined for grade ${grade} and category ${category_id}. Allowing expense.`)
+      return buildResponse({
+        valid: true,
+        status: "pending",
+        violations: [],
+        rule: null,
+      } satisfies ValidationResult)
     }
 
+    const numAmount = Number(amount)
+    const perExpenseLimit = Number(rule.per_expense_limit)
+    const dailyLimit = Number(rule.daily_limit)
+
     // Check per-expense limit
-    if (amount > rule.per_expense_limit) {
+    if (numAmount > perExpenseLimit) {
       violations.push(
-        `Amount ₹${amount.toFixed(2)} exceeds the per-expense limit of ₹${rule.per_expense_limit.toFixed(2)} for Grade ${grade}`
+        `Amount ₹${numAmount.toFixed(2)} exceeds the per-expense limit of ₹${perExpenseLimit.toFixed(2)} for Grade ${grade}`
       )
       status = "flagged"
     }
@@ -91,16 +150,19 @@ Deno.serve(async (req: Request) => {
       .eq("expense_date", expense_date)
       .neq("status", "rejected")
 
-    if (expErr) throw expErr
+    if (expErr) {
+      console.error("[validate-expense] Database error fetching today's expenses:", expErr.message)
+      throw expErr
+    }
 
     const dailySpent = (todayExpenses ?? []).reduce((sum, e) => sum + Number(e.amount), 0)
-    const projectedDaily = dailySpent + amount
+    const projectedDaily = dailySpent + numAmount
 
-    if (projectedDaily > rule.daily_limit) {
+    if (projectedDaily > dailyLimit) {
       violations.push(
-        `Total for this category today would be ₹${projectedDaily.toFixed(2)}, exceeding the daily limit of ₹${rule.daily_limit.toFixed(2)} for Grade ${grade}`
+        `Total for this category today would be ₹${projectedDaily.toFixed(2)}, exceeding the daily limit of ₹${dailyLimit.toFixed(2)} for Grade ${grade}`
       )
-      if (amount > rule.daily_limit) {
+      if (numAmount > dailyLimit) {
         status = "rejected"
       } else {
         status = "flagged"
@@ -108,28 +170,30 @@ Deno.serve(async (req: Request) => {
     }
 
     // Hard reject: amount is more than 3x the per_expense_limit
-    if (amount > rule.per_expense_limit * 3) {
+    if (numAmount > perExpenseLimit * 3) {
+      violations.push(
+        `Amount ₹${numAmount.toFixed(2)} is more than 3x the per-expense limit of ₹${perExpenseLimit.toFixed(2)} (Hard Limit Exceeded)`
+      )
       status = "rejected"
     }
 
-    return new Response(
-      JSON.stringify({
-        valid: violations.length === 0,
-        status,
-        violations,
-        rule: {
-          daily_limit: rule.daily_limit,
-          per_expense_limit: rule.per_expense_limit,
-          daily_spent: dailySpent,
-          daily_remaining: Math.max(0, rule.daily_limit - dailySpent),
-        },
-      } satisfies ValidationResult),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    )
+    const result: ValidationResult = {
+      valid: violations.length === 0,
+      status,
+      violations,
+      rule: {
+        daily_limit: dailyLimit,
+        per_expense_limit: perExpenseLimit,
+        daily_spent: dailySpent,
+        daily_remaining: Math.max(0, dailyLimit - dailySpent),
+      },
+    }
+
+    console.log(`[validate-expense] Validation complete. Status: ${status}, violations: ${violations.length}`)
+    return buildResponse(result)
+
   } catch (err) {
-    return new Response(
-      JSON.stringify({ error: (err as Error).message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    )
+    console.error("[validate-expense] Unhandled exception occurred:", err)
+    return buildResponse({ error: (err as Error).message || "An unexpected error occurred." }, 500)
   }
 })

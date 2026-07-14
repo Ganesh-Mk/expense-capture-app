@@ -109,27 +109,31 @@ export default function NewExpensePage() {
     if (!user || !profile) return null;
     setValidating(true);
     try {
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/validate-expense`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          },
-          body: JSON.stringify({
-            user_id: user.id,
-            category_id: categoryId,
-            amount,
-            expense_date: date,
-            grade: profile.grade,
-          }),
+      const { data, error, response } = await supabase.functions.invoke<ValidationResult>('validate-expense', {
+        body: {
+          user_id: user.id,
+          category_id: categoryId,
+          amount,
+          expense_date: date,
+          grade: profile.grade,
         },
-      );
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error ?? "Unable to validate expense policy");
+      });
+
+      if (error) {
+        let errorMessage = "Unable to validate expense policy";
+        try {
+          if (response) {
+            const errBody = await response.json();
+            if (errBody && errBody.error) {
+              errorMessage = errBody.error;
+            }
+          }
+        } catch {
+          errorMessage = error.message || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
+
       setValidation(data);
       return data;
     } catch (err) {

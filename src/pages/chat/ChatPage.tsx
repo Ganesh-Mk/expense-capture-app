@@ -165,27 +165,24 @@ export default function ChatPage() {
     if (!user || !profile) return null
 
     try {
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/validate-expense`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          },
-          body: JSON.stringify({
-            user_id: user.id,
-            category_id: categoryId,
-            amount,
-            expense_date: date,
-            grade: profile.grade,
-          }),
+      const { data, error } = await supabase.functions.invoke<ValidationResult>('validate-expense', {
+        body: {
+          user_id: user.id,
+          category_id: categoryId,
+          amount,
+          expense_date: date,
+          grade: profile.grade,
         },
-      )
+      })
 
-      if (!res.ok) return null
-      return res.json()
-    } catch {
+      if (error) {
+        console.error('Validation function error:', error)
+        return null
+      }
+
+      return data
+    } catch (err) {
+      console.error('Failed to invoke validation function:', err)
       return null
     }
   }
